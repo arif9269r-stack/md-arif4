@@ -2,9 +2,10 @@
 <!DOCTYPE html>
 <html lang="bn">
 <head>
+    <meta name="google-site-verification" content="google4af9e480d05fc4fd.html">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Game Top-Up Store</title>
+    <title>Tips-Shop</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -65,7 +66,7 @@
         .screen.active { transform: translateX(0); }
         #homeScreen, #loginScreen { transform: translateX(0); }
 
-        .auth-container { display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .auth-container { display: none; align-items: center; justify-content: center; padding: 20px; }
         .auth-wrapper { width: 100%; }
         .auth-logo-container { text-align: center; margin-bottom: 40px; }
         .auth-logo-container h1 { font-size: 36px; font-weight: 700; color: var(--primary-purple); }
@@ -362,7 +363,7 @@
         }
         #popupMessage { margin-top: 15px; color: var(--secondary-text-color); }
 
-        .status-indicator {
+        .status-indicator { display:none !important; 
             display: flex;
             align-items: center;
             gap: 8px;
@@ -376,6 +377,45 @@
         .status-indicator .dot { width: 8px; height: 8px; border-radius: 50%; }
         .status-indicator.online .dot { background-color: #10B981; }
         .status-indicator.offline .dot { background-color: #EF4444; }
+    
+        /* Tips-Shop: prevent normal text selection/copying.
+           The only intended copy action is the payment-number button. */
+        html, body, body * {
+            -webkit-user-select: none !important;
+            user-select: none !important;
+            -webkit-touch-callout: none !important;
+        }
+        img, a, button, div, p, span, h1, h2, h3, h4, h5, h6, label {
+            -webkit-user-drag: none !important;
+            user-drag: none !important;
+        }
+        .payment-number-box {
+            text-align: center;
+            background: var(--light-purple);
+            border-radius: var(--border-radius-medium);
+            padding: 14px;
+            margin-bottom: 15px;
+        }
+        .payment-number-box p { margin-bottom: 6px; font-weight: 600; }
+        .payment-number-value {
+            display: block;
+            color: var(--primary-purple);
+            font-size: 20px;
+            letter-spacing: .5px;
+            margin-bottom: 10px;
+        }
+        .copy-number-btn {
+            border: 0;
+            background: var(--primary-purple);
+            color: #fff;
+            border-radius: 10px;
+            padding: 10px 16px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .copy-number-btn:active { transform: scale(.97); }
+
     </style>
 </head>
 <body> 
@@ -383,7 +423,7 @@
         <div class="screen active" id="loginScreen">
             <div class="auth-wrapper">
                 <div class="auth-logo-container">
-                    <h1 id="authLogoText">GameStore</h1>
+                    <h1 id="authLogoText">Tips-Shop</h1>
                 </div>
                 <div class="auth-form">
                     <h2>স্বাগতম!</h2>
@@ -408,10 +448,6 @@
                     <p>আপনার পছন্দের গেমটি বেছে নিন</p>
                 </div>
                 <div class="header-right-icons">
-                     <div id="onlineStatus" class="status-indicator offline">
-                        <span class="dot"></span>
-                        <span id="onlineStatusText">Offline</span>
-                    </div>
                     <img id="headerProfileAvatar" src="" alt="Avatar" class="profile-avatar" style="display: none;" onclick="showScreen('profileScreen', document.querySelectorAll('.nav-item')[4])">
                 </div>
             </header>
@@ -480,9 +516,13 @@
                     <!-- Add Money payment methods will be loaded here dynamically -->
                 </div>
                  <div id="addMoneyPaymentDetailsSection" style="display: none; margin-top: 20px;">
-                    <p style="text-align: center; font-weight: 600; margin-bottom: 10px;">
-                        নিচের নম্বরে টাকা পাঠান: <strong id="addMoneyAdminPaymentNumber" style="color: var(--primary-purple); font-size: 18px;"></strong>
-                    </p>
+                    <div class="payment-number-box">
+                        <p>নিচের নম্বরে টাকা পাঠান</p>
+                        <strong id="addMoneyAdminPaymentNumber" class="payment-number-value"></strong>
+                        <button type="button" class="copy-number-btn allow-copy-number" id="copyAddMoneyNumberBtn">
+                            <i class="fa-solid fa-copy"></i> নম্বর কপি
+                        </button>
+                    </div>
                     <div class="input-group" style="margin-top: 15px;">
                         <label for="addMoneyUserPaymentNumber">আপনার পেমেন্ট নম্বর</label>
                         <input type="tel" id="addMoneyUserPaymentNumber" placeholder="যে নম্বর থেকে টাকা পাঠিয়েছেন">
@@ -608,6 +648,13 @@
         const db = firebase.firestore();
         const storage = firebase.storage();
 
+        // Configure first, then enable offline persistence for faster repeat visits.
+        try { db.settings({ experimentalForceLongPolling: true, useFetchStreams: false }); } catch (e) {}
+        db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+
+        // Persistent Google session: it survives page reloads/browser restarts.
+        auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
+
         let currentUser = null;
         let selectedGameData = {}, selectedPackage = null, selectedPayment = null, selectedAddMoneyPayment = null;
         let gamesFromDB = [];
@@ -652,6 +699,11 @@
             }
 
             currentUser = user;
+
+            // Saved login found: open immediately. Firestore data continues loading in parallel.
+            authContainer.style.display = 'none';
+            appContainer.style.display = 'block';
+
             try {
                 const userRef = db.collection('users').doc(user.uid);
                 const userDoc = await userRef.get();
@@ -679,7 +731,7 @@
                         createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
                 } else {
-                    await userRef.set(googleData, { merge: true });
+                    userRef.set(googleData, { merge: true }).catch(e => console.warn('lastLogin update:', e));
                 }
 
                 userRef.onSnapshot(doc => {
@@ -692,19 +744,17 @@
                     if (greeting) greeting.innerText = `হাই, ${name.split(' ')[0]}`;
                 });
 
-                await loadGamesFromFirestore();
-                await loadPaymentMethods();
-
-                authContainer.style.display = 'none';
-                appContainer.style.display = 'block';
-
+                // Secondary data loads in parallel.
                 initializeAddMoneyScreen();
-                loadMoneyRequestHistory();
-                loadOrderHistory();
-                loadSlider();
-                initializeNoticeListener();
-                initializeOnlineStatusListener();
-                initializePopupListener();
+                Promise.allSettled([
+                    loadGamesFromFirestore(),
+                    loadPaymentMethods(),
+                    loadMoneyRequestHistory(),
+                    loadOrderHistory(),
+                    loadSlider(),
+                    initializeNoticeListener(),
+                    initializePopupListener()
+                ]);
             } catch (error) {
                 console.error(error);
                 alert('অ্যাকাউন্ট লোড করতে সমস্যা হয়েছে: ' + error.message);
@@ -792,9 +842,14 @@
                         selectedPayment = { ...method, type: 'manual' };
 
                         detailsSection.innerHTML = `
-                            <p style="text-align: center; font-weight: 600; margin-bottom: 10px;">
-                                নিচের নম্বরে টাকা পাঠান: <strong style="color: var(--primary-purple); font-size: 18px;">${method.number}</strong>
-                            </p>
+                            <div class="payment-number-box">
+                                <p>নিচের নম্বরে টাকা পাঠান</p>
+                                <strong id="topupAdminPaymentNumber" class="payment-number-value">${method.number}</strong>
+                                <button type="button" class="copy-number-btn allow-copy-number"
+                                    onclick="copyPaymentNumber(${JSON.stringify(String(method.number))}, this)">
+                                    <i class="fa-solid fa-copy"></i> নম্বর কপি
+                                </button>
+                            </div>
                             <div class="input-group" style="margin-top: 15px;">
                                 <label for="userPaymentNumber">আপনার পেমেন্ট নম্বর</label>
                                 <input type="tel" id="userPaymentNumber" placeholder="যে নম্বর থেকে টাকা পাঠিয়েছেন">
@@ -818,6 +873,10 @@
                         selectedAddMoneyPayment = method;
                         document.getElementById('addMoneyPaymentDetailsSection').style.display = 'block';
                         document.getElementById('addMoneyAdminPaymentNumber').innerText = method.number;
+                        const copyAddBtn = document.getElementById('copyAddMoneyNumberBtn');
+                        if (copyAddBtn) {
+                            copyAddBtn.onclick = () => copyPaymentNumber(String(method.number), copyAddBtn);
+                        }
                     }
                 });
             });
@@ -1494,17 +1553,74 @@
             const statusText = document.getElementById('onlineStatusText');
 
             db.collection('settings').doc('onlineStatus').onSnapshot(doc => {
-                if (doc.exists && doc.data().isOnline) {
-                    statusIndicator.classList.remove('offline');
-                    statusIndicator.classList.add('online');
-                    statusText.innerText = 'Online';
-                } else {
-                    statusIndicator.classList.remove('online');
-                    statusIndicator.classList.add('offline');
-                    statusText.innerText = 'Offline';
-                }
+                // No status document = Online by default.
+                // If Admin explicitly turns the switch OFF, show Offline.
+                const isOnline = !doc.exists || doc.data().isOnline === true;
+                statusIndicator.classList.toggle('online', isOnline);
+                statusIndicator.classList.toggle('offline', !isOnline);
+                statusText.innerText = isOnline ? 'Online' : 'Offline';
+            }, error => {
+                // A temporary Firestore listener error should not falsely label
+                // the whole app as offline.
+                statusIndicator.classList.remove('offline');
+                statusIndicator.classList.add('online');
+                statusText.innerText = 'Online';
+                console.error('Online status listener error:', error);
             });
         }
+    
+        document.addEventListener('selectstart', function(e) {
+            if (!e.target.closest || !e.target.closest('.allow-copy-number')) e.preventDefault();
+        }, true);
+
+        // ---------- Tips-Shop copy protection ----------
+        // Normal text cannot be selected/copied. Only the dedicated
+        // "নম্বর কপি" buttons are allowed to write a payment number to clipboard.
+        document.addEventListener('copy', function (e) {
+            if (!e.target.closest || !e.target.closest('.allow-copy-number')) {
+                e.preventDefault();
+                e.clipboardData?.setData('text/plain', '');
+            }
+        }, true);
+        document.addEventListener('cut', function (e) {
+            e.preventDefault();
+        }, true);
+        document.addEventListener('contextmenu', function (e) {
+            if (!e.target.closest || !e.target.closest('.allow-copy-number')) {
+                e.preventDefault();
+            }
+        }, true);
+        document.addEventListener('dragstart', function (e) {
+            e.preventDefault();
+        }, true);
+        document.addEventListener('keydown', function (e) {
+            const key = String(e.key || '').toLowerCase();
+            if ((e.ctrlKey || e.metaKey) && ['c','x','a'].includes(key)) {
+                e.preventDefault();
+            }
+        }, true);
+
+        async function copyPaymentNumber(number, button) {
+            try {
+                await navigator.clipboard.writeText(String(number));
+            } catch (err) {
+                // Fallback for browsers/webviews where Clipboard API is unavailable.
+                const ta = document.createElement('textarea');
+                ta.value = String(number);
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                ta.setSelectionRange(0, ta.value.length);
+                document.execCommand('copy');
+                ta.remove();
+            }
+            const old = button.innerHTML;
+            button.innerHTML = '<i class="fa-solid fa-check"></i> কপি হয়েছে';
+            setTimeout(() => { button.innerHTML = old; }, 1400);
+        }
+
     </script>
 </body>
 </html>
